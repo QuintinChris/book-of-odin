@@ -5,7 +5,7 @@ var cookieParser = require('cookie-parser');
 var logger = require('morgan');
 var passport = require('passport');
 var FacebookStrategy = require('passport-facebook').Strategy;
-var mongoConfig = require("./mongoConfig");
+var mongoose = require("mongoose");
 const dotenv = require('dotenv');
 dotenv.config();
 
@@ -14,42 +14,44 @@ var usersRouter = require('./routes/users');
 
 var app = express();
 
+// Configure MongoDB Connection
+const mongoDb = process.env.MONGODB_URI;
+mongoose.connect(mongoDb, {
+  useUnifiedTopology: true,
+  useNewUrlParser: true
+});
+const db = mongoose.connection;
+db.on("error", console.error.bind(console, "mongo connection error"));
 
 
 // Set up facebook login
-
 const fbOptions = {
   clientID: process.env.FACEBOOK_APP_ID,
   clientSecret: process.env.FACEBOOK_APP_SECRET,
-  callbackURL: "https://localhost:3000/auth/facebook/callback"
+  callbackURL: "https://localhost:3000/auth/facebook/callback",
+  profileFields: ['id', 'displayName', 'name', 'gender', 'photos']
 };
 
 const fbCallback = function (accessToken, refreshToken, profile, cb) {
   console.log(accessToken, refreshToken, profile);
+  User.findOrCreate(User, function (err, user) {
+    if (err) { return done(err); }
+    done(null, user);
+  });
 }
 
 passport.use(new FacebookStrategy(fbOptions, fbCallback));
-/*
-  function (accessToken, refreshToken, profile, done) {
-    User.findOrCreate(User, function (err, user) {
-      if (err) { return done(err); }
-      done(null, user);
-    });
-  }
-));
-*/
 
-// Facebook login
 app.route('/').get(passport.authenticate('facebook'));
 app.route('/auth/facebook/callback').get(
   passport.authenticate('facebook', {
-    successRedirect: '/index',
-    failureRedirect: '/login'
+    successRedirect: '../views/index',
+    failureRedirect: '../views/login'
   })
 );
 
-//app.use(passport.initialize());
-//app.use(passport.session());
+app.use(passport.initialize());
+app.use(passport.session());
 
 
 // view engine setup
