@@ -3,6 +3,8 @@ var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
+var session = require('express-session');
+var url = require('url');
 var passport = require('passport');
 var FacebookStrategy = require('passport-facebook').Strategy;
 var mongoose = require("mongoose");
@@ -24,12 +26,29 @@ const db = mongoose.connection;
 db.on("error", console.error.bind(console, "mongo connection error"));
 
 
+// view engine setup
+app.set('views', path.join(__dirname, 'views'));
+app.set('view engine', 'pug');
+
+app.use(logger('dev'));
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cookieParser());
+app.use(express.static(path.join(__dirname, 'public')));
+app.use(session({ secret: "secretBook", resave: false, saveUninitialized: true }));
+app.use(passport.initialize());
+app.use(passport.session());
+app.enable('trust proxy');
+
+
+
 // Set up facebook login
 const fbOptions = {
   clientID: process.env.FACEBOOK_APP_ID,
   clientSecret: process.env.FACEBOOK_APP_SECRET,
   callbackURL: "https://localhost:3000/auth/facebook/callback",
-  profileFields: ['id', 'displayName', 'name', 'gender', 'photos']
+  profileFields: ['id', 'displayName', 'name', 'gender', 'photos'],
+  proxy: true
 };
 
 const fbCallback = function (accessToken, refreshToken, profile, cb) {
@@ -40,31 +59,34 @@ const fbCallback = function (accessToken, refreshToken, profile, cb) {
   });
 }
 
+// For redirect after login
+const storeRedirectToInSession = (req, res, next) => {
+  let url_parts = url.parse(req.get('referer'));
+  const redirectTo = url_parts.pathname;
+  console.log(req.session);
+  req.session.redirectTo = redirectTo;
+  next();
+};
+
 passport.use(new FacebookStrategy(fbOptions, fbCallback));
 
-app.route('/').get(passport.authenticate('facebook'));
+app.route('/auth/facebook').get(storeRedirectToInSession, passport.authenticate('facebook', { scope: ['public_profile'] }));
 app.route('/auth/facebook/callback').get(
   passport.authenticate('facebook', {
-    successRedirect: '../views/index',
     failureRedirect: '../views/login'
-  })
+  }), (req, res) => {
+    logger.debug('Successful Authorization');
+    res.redirect(req.session.redirectTo);
+  }
 );
 
-app.use(passport.initialize());
-app.use(passport.session());
 
 
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'pug');
 
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
-app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
 
-//app.use('/', indexRouter);
+
+
+app.use('/', indexRouter);
 app.use('/users', usersRouter);
 
 // catch 404 and forward to error handler
